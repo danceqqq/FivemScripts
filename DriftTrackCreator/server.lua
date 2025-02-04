@@ -4,14 +4,15 @@ local leaderboards = {}
 
 -- Сохранение новой трассы
 RegisterServerEvent("saveDriftRace")
-AddEventHandler("saveDriftRace", function(start, clips, finish, name)
+AddEventHandler("saveDriftRace", function(start, clips, finish, name, raceType)
     local src = source
     local raceId = tostring(start)
     races[raceId] = {
         startPoint = start,
         clipPoints = clips,
         finishPoint = finish,
-        name = name
+        name = name,
+        raceType = raceType
     }
     leaderboards[raceId] = {}
     TriggerClientEvent("updateClientRaceData", -1, start, clips, finish, name) -- Обновляем данные у всех игроков
@@ -20,7 +21,7 @@ end)
 
 -- Обновление существующей трассы
 RegisterServerEvent("updateDriftRace")
-AddEventHandler("updateDriftRace", function(start, clips, finish, name)
+AddEventHandler("updateDriftRace", function(start, clips, finish, name, raceType)
     local src = source
     local raceId = tostring(start)
     if races[raceId] then
@@ -28,6 +29,7 @@ AddEventHandler("updateDriftRace", function(start, clips, finish, name)
         races[raceId].clipPoints = clips
         races[raceId].finishPoint = finish
         races[raceId].name = name
+        races[raceId].raceType = raceType
         TriggerClientEvent("updateClientRaceData", -1, start, clips, finish, name) -- Обновляем данные у всех игроков
         TriggerClientEvent("chat:addMessage", src, { args = { "^2Трасса успешно обновлена!" } })
     else
