@@ -1,10 +1,14 @@
 -- Переменные для работы
 local isCreatingRace = false -- Режим создания заезда
+local isEditingRace = false -- Режим редактирования заезда
 local startPoint, clipPoints, finishPoint = nil, {}, nil -- Точки трассы
-local currentDriftPoints = 0 -- Текущие дрифт-очки
+local currentDriftPoints = {} -- Текущие дрифт-очки для каждого игрока
 local raceStarted = false -- Флаг начала заезда
 local leaderboardData = {} -- Данные таблицы лидеров
 local blips = {} -- Хранилище blips
+local raceName = "" -- Имя трассы
+local timeLimit = 60 -- Временной лимит для заезда (в секундах)
+local raceTimer = 0 -- Таймер заезда
 
 -- Создание blip
 local function createBlip(coords, color, text)
@@ -29,36 +33,76 @@ end
 
 -- Обновление данных о трассе и создание blips
 RegisterNetEvent("updateClientRaceData")
-AddEventHandler("updateClientRaceData", function(start, clips, finish)
+AddEventHandler("updateClientRaceData", function(start, clips, finish, name)
     removeBlips() -- Удаляем старые blips
 
     -- Создаем blip для точки старта
     if start then
-        table.insert(blips, createBlip(start, 5, "Старт"))
+        table.insert(blips, createBlip(start, 5, "Старт (" .. name .. ")"))
     end
 
     -- Создаем blips для чекпоинтов
     if clips then
         for i, point in ipairs(clips) do
-            table.insert(blips, createBlip(point, 4, "Чекпоинт " .. i))
+            table.insert(blips, createBlip(point, 4, "Чекпоинт " .. i .. " (" .. name .. ")"))
         end
     end
 
     -- Создаем blip для финишной точки
     if finish then
-        table.insert(blips, createBlip(finish, 3, "Финиш"))
+        table.insert(blips, createBlip(finish, 3, "Финиш (" .. name .. ")"))
     end
 end)
 
 -- Команда для входа в режим создания трассы
 RegisterCommand("createdr", function()
-    if not isCreatingRace then
+    if not isCreatingRace and not isEditingRace then
         isCreatingRace = true
         removeBlips() -- Удаляем все blips перед началом создания новой трассы
         SetCamActiveWithInterp(CreateCamWithParams("DEFAULT_SCRIPTED_CAMERA", GetEntityCoords(PlayerPedId()), 0.0, 0.0, 0.0, 5000, true, 2), 5000, true, true)
-        TriggerEvent("chat:addMessage", { args = { "^3Режим создания трассы активирован!" } })
+        TriggerEvent("chat:addMessage", { args = { "^3Введите имя трассы:" } })
+        Citizen.CreateThread(function()
+            while isCreatingRace do
+                Citizen.Wait(0)
+                if IsControlJustPressed(0, 246) then -- Нажатие клавиши Enter
+                    local input = exports["input"]:ShowInput("Enter Race Name")
+                    if input then
+                        raceName = input
+                        TriggerEvent("chat:addMessage", { args = { "^3Режим создания трассы активирован!" } })
+                        break
+                    end
+                end
+            end
+        end)
     else
-        TriggerEvent("chat:addMessage", { args = { "^1Вы уже находитесь в режиме создания трассы!" } })
+        TriggerEvent("chat:addMessage", { args = { "^1Вы уже находитесь в режиме создания или редактирования трассы!" } })
+    end
+end)
+
+-- Команда для редактирования трассы
+RegisterCommand("editdr", function(_, args)
+    if not isCreatingRace and not isEditingRace then
+        if args[2] then
+            local raceId = tostring(args[2])
+            local playerPos = GetEntityCoords(PlayerPedId())
+            local closestStart = nil
+            for id, data in pairs(races) do
+                if GetDistanceBetweenCoords(playerPos, data.startPoint, true) < 10.0 then
+                    closestStart = data.startPoint
+                    break
+                end
+            end
+            if closestStart then
+                isEditingRace = true
+                TriggerEvent("chat:addMessage", { args = { "^3Режим редактирования трассы '" .. raceId .. "' активирован!" } })
+            else
+                TriggerEvent("chat:addMessage", { args = { "^1Вы не находитесь рядом со стартовой точкой трассы!" } })
+            end
+        else
+            TriggerEvent("chat:addMessage", { args = { "^1Использование: /editdr <имя_трассы>" } })
+        end
+    else
+        TriggerEvent("chat:addMessage", { args = { "^1Вы уже находитесь в режиме создания или редактирования трассы!" } })
     end
 end)
 
@@ -66,7 +110,7 @@ end)
 Citizen.CreateThread(function()
     while true do
         Citizen.Wait(0)
-        if isCreatingRace then
+        if isCreatingRace or isEditingRace then
             if IsControlJustPressed(0, 38) then -- Нажатие клавиши E
                 local playerPos = GetEntityCoords(PlayerPedId())
                 if not startPoint then
@@ -78,10 +122,16 @@ Citizen.CreateThread(function()
                 else
                     finishPoint = playerPos
                     TriggerEvent("chat:addMessage", { args = { "^2Финишная точка установлена!" } })
-                    isCreatingRace = false
-                    DestroyCam(GetFollowPedCamViewMode(), false)
-                    TriggerServerEvent("saveDriftRace", startPoint, clipPoints, finishPoint)
-                    TriggerEvent("updateClientRaceData", startPoint, clipPoints, finishPoint)
+                    if isCreatingRace then
+                        isCreatingRace = false
+                        DestroyCam(GetFollowPedCamViewMode(), false)
+                        TriggerServerEvent("saveDriftRace", startPoint, clipPoints, finishPoint, raceName)
+                        TriggerEvent("updateClientRaceData", startPoint, clipPoints, finishPoint, raceName)
+                    elseif isEditingRace then
+                        isEditingRace = false
+                        TriggerServerEvent("updateDriftRace", startPoint, clipPoints, finishPoint, raceName)
+                        TriggerEvent("updateClientRaceData", startPoint, clipPoints, finishPoint, raceName)
+                    end
                 end
             end
         end
@@ -95,31 +145,42 @@ Citizen.CreateThread(function()
         if startPoint and GetDistanceBetweenCoords(GetEntityCoords(PlayerPedId()), startPoint, true) < 5.0 then
             if not raceStarted then
                 raceStarted = true
-                currentDriftPoints = 0
-                TriggerEvent("chat:addMessage", { args = { "^2Заезд начался!" } })
+                currentDriftPoints[source] = 0
+                raceTimer = timeLimit
+                TriggerEvent("chat:addMessage", { args = { "^2Заезд начался! Время: " .. timeLimit .. " сек." } })
                 TriggerServerEvent("getLeaderboard", startPoint) -- Запросить таблицу лидеров
             end
         end
 
         if raceStarted then
+            -- Обновление таймера
+            if raceTimer > 0 then
+                raceTimer = raceTimer - 1
+                if raceTimer == 0 then
+                    raceStarted = false
+                    TriggerEvent("chat:addMessage", { args = { "^1Время вышло!" } })
+                end
+            end
+
             local speed = GetEntitySpeed(PlayerPedId()) * 2.236936 -- Скорость в милях/час
             local driftAngle = GetVehicleSteeringAngle(GetVehiclePedIsIn(PlayerPedId(), false))
             if math.abs(driftAngle) > 30 and speed > 30 then
-                currentDriftPoints = currentDriftPoints + 1
+                currentDriftPoints[source] = currentDriftPoints[source] + 1
             end
 
             -- Проверка чекпоинтов
             for i, point in ipairs(clipPoints) do
                 if GetDistanceBetweenCoords(GetEntityCoords(PlayerPedId()), point, true) < 5.0 then
                     TriggerEvent("chat:addMessage", { args = { "^2Чекпоинт " .. i .. " пройден!" } })
+                    TriggerServerEvent("syncCheckpoint", startPoint, i)
                 end
             end
 
             -- Проверка финиша
             if finishPoint and GetDistanceBetweenCoords(GetEntityCoords(PlayerPedId()), finishPoint, true) < 5.0 then
                 raceStarted = false
-                TriggerEvent("chat:addMessage", { args = { "^2Вы финишировали! Собрано дрифт-очков: " .. currentDriftPoints } })
-                TriggerServerEvent("updateLeaderboard", startPoint, currentDriftPoints)
+                TriggerEvent("chat:addMessage", { args = { "^2Вы финишировали! Собрано дрифт-очков: " .. currentDriftPoints[source] } })
+                TriggerServerEvent("updateLeaderboard", startPoint, currentDriftPoints[source])
             end
         end
     end
@@ -133,18 +194,19 @@ AddEventHandler("loadRaceData", function(racesData)
         local start = data.startPoint
         local clips = data.clipPoints
         local finish = data.finishPoint
+        local name = data.name
 
         -- Создаем blips для каждой трассы
         if start then
-            table.insert(blips, createBlip(start, 5, "Старт (" .. raceId .. ")"))
+            table.insert(blips, createBlip(start, 5, "Старт (" .. name .. ")"))
         end
         if clips then
             for i, point in ipairs(clips) do
-                table.insert(blips, createBlip(point, 4, "Чекпоинт " .. i .. " (" .. raceId .. ")"))
+                table.insert(blips, createBlip(point, 4, "Чекпоинт " .. i .. " (" .. name .. ")"))
             end
         end
         if finish then
-            table.insert(blips, createBlip(finish, 3, "Финиш (" .. raceId .. ")"))
+            table.insert(blips, createBlip(finish, 3, "Финиш (" .. name .. ")"))
         end
     end
 end)
