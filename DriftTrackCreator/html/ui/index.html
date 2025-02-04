@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drift Race</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="modal" class="hidden">
+        <div class="modal-content">
+            <h2 id="title">Создание трассы</h2>
+            <form id="raceForm">
+                <label for="name">Имя трассы:</label>
+                <input type="text" id="name" name="name" required>
+                <label for="type">Тип заезда:</label>
+                <select id="type" name="type">
+                    <option value="drift">Дрифт</option>
+                    <option value="time">Гонка на время</option>
+                </select>
+                <button type="submit">Сохранить</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="raceInfo" class="hidden">
+        <h2>Информация о заезде</h2>
+        <p>Оставшееся время: <span id="time"></span></p>
+        <p>Дрифт-очки: <span id="points"></span></p>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
