@@ -9,6 +9,7 @@ local blips = {} -- Хранилище blips
 local raceName = "" -- Имя трассы
 local timeLimit = 60 -- Временной лимит для заезда (в секундах)
 local raceTimer = 0 -- Таймер заезда
+local raceType = "drift" -- Тип заезда (drift или time)
 
 -- Создание blip
 local function createBlip(coords, color, text)
@@ -31,7 +32,24 @@ local function removeBlips()
     blips = {}
 end
 
--- Обновление данных о трассе и создание blips
+-- Открытие NUI интерфейса
+local function openNUI(data)
+    SendNUIMessage({
+        action = "open",
+        data = data
+    })
+    SetNuiFocus(true, true)
+end
+
+-- Закрытие NUI интерфейса
+local function closeNUI()
+    SendNUIMessage({
+        action = "close"
+    })
+    SetNuiFocus(false, false)
+end
+
+-- Обработка создания трассы
 RegisterNetEvent("updateClientRaceData")
 AddEventHandler("updateClientRaceData", function(start, clips, finish, name)
     removeBlips() -- Удаляем старые blips
@@ -60,20 +78,7 @@ RegisterCommand("createdr", function()
         isCreatingRace = true
         removeBlips() -- Удаляем все blips перед началом создания новой трассы
         SetCamActiveWithInterp(CreateCamWithParams("DEFAULT_SCRIPTED_CAMERA", GetEntityCoords(PlayerPedId()), 0.0, 0.0, 0.0, 5000, true, 2), 5000, true, true)
-        TriggerEvent("chat:addMessage", { args = { "^3Введите имя трассы:" } })
-        Citizen.CreateThread(function()
-            while isCreatingRace do
-                Citizen.Wait(0)
-                if IsControlJustPressed(0, 246) then -- Нажатие клавиши Enter
-                    local input = exports["input"]:ShowInput("Enter Race Name")
-                    if input then
-                        raceName = input
-                        TriggerEvent("chat:addMessage", { args = { "^3Режим создания трассы активирован!" } })
-                        break
-                    end
-                end
-            end
-        end)
+        openNUI({ type = "create_race" })
     else
         TriggerEvent("chat:addMessage", { args = { "^1Вы уже находитесь в режиме создания или редактирования трассы!" } })
     end
@@ -94,7 +99,7 @@ RegisterCommand("editdr", function(_, args)
             end
             if closestStart then
                 isEditingRace = true
-                TriggerEvent("chat:addMessage", { args = { "^3Режим редактирования трассы '" .. raceId .. "' активирован!" } })
+                openNUI({ type = "edit_race", raceId = raceId })
             else
                 TriggerEvent("chat:addMessage", { args = { "^1Вы не находитесь рядом со стартовой точкой трассы!" } })
             end
@@ -125,11 +130,11 @@ Citizen.CreateThread(function()
                     if isCreatingRace then
                         isCreatingRace = false
                         DestroyCam(GetFollowPedCamViewMode(), false)
-                        TriggerServerEvent("saveDriftRace", startPoint, clipPoints, finishPoint, raceName)
+                        TriggerServerEvent("saveDriftRace", startPoint, clipPoints, finishPoint, raceName, raceType)
                         TriggerEvent("updateClientRaceData", startPoint, clipPoints, finishPoint, raceName)
                     elseif isEditingRace then
                         isEditingRace = false
-                        TriggerServerEvent("updateDriftRace", startPoint, clipPoints, finishPoint, raceName)
+                        TriggerServerEvent("updateDriftRace", startPoint, clipPoints, finishPoint, raceName, raceType)
                         TriggerEvent("updateClientRaceData", startPoint, clipPoints, finishPoint, raceName)
                     end
                 end
@@ -147,6 +152,7 @@ Citizen.CreateThread(function()
                 raceStarted = true
                 currentDriftPoints[source] = 0
                 raceTimer = timeLimit
+                openNUI({ type = "race_info", timeLimit = timeLimit, raceType = raceType })
                 TriggerEvent("chat:addMessage", { args = { "^2Заезд начался! Время: " .. timeLimit .. " сек." } })
                 TriggerServerEvent("getLeaderboard", startPoint) -- Запросить таблицу лидеров
             end
@@ -158,6 +164,7 @@ Citizen.CreateThread(function()
                 raceTimer = raceTimer - 1
                 if raceTimer == 0 then
                     raceStarted = false
+                    closeNUI()
                     TriggerEvent("chat:addMessage", { args = { "^1Время вышло!" } })
                 end
             end
@@ -171,6 +178,7 @@ Citizen.CreateThread(function()
             -- Проверка чекпоинтов
             for i, point in ipairs(clipPoints) do
                 if GetDistanceBetweenCoords(GetEntityCoords(PlayerPedId()), point, true) < 5.0 then
+                    PlaySoundFrontend(-1, "CHECKPOINT_PERFECT", "HUD_MINI_GAME_SOUNDSET", true)
                     TriggerEvent("chat:addMessage", { args = { "^2Чекпоинт " .. i .. " пройден!" } })
                     TriggerServerEvent("syncCheckpoint", startPoint, i)
                 end
@@ -179,6 +187,7 @@ Citizen.CreateThread(function()
             -- Проверка финиша
             if finishPoint and GetDistanceBetweenCoords(GetEntityCoords(PlayerPedId()), finishPoint, true) < 5.0 then
                 raceStarted = false
+                closeNUI()
                 TriggerEvent("chat:addMessage", { args = { "^2Вы финишировали! Собрано дрифт-очков: " .. currentDriftPoints[source] } })
                 TriggerServerEvent("updateLeaderboard", startPoint, currentDriftPoints[source])
             end
@@ -208,5 +217,18 @@ AddEventHandler("loadRaceData", function(racesData)
         if finish then
             table.insert(blips, createBlip(finish, 3, "Финиш (" .. name .. ")"))
         end
+    end
+end)
+
+-- Обработка событий из NUI
+RegisterNUICallback("submit", function(data, cb)
+    if data.type == "create_race" then
+        raceName = data.name
+        raceType = data.type
+        cb("ok")
+    elseif data.type == "edit_race" then
+        raceName = data.name
+        raceType = data.type
+        cb("ok")
     end
 end)
