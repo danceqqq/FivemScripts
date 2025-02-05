@@ -27,10 +27,12 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         const name = document.getElementById('name').value;
         const type = document.getElementById('type').value;
-        fetch(`https://your-resource-name/submit`, {
+        fetch(`https://${GetParentResourceName()}/submit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ type: 'create_race', name, type })
+        }).then(() => {
+            modal.classList.add('hidden');
         });
     });
 });
