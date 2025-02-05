@@ -49,7 +49,7 @@ local function closeNUI()
     SetNuiFocus(false, false)
 end
 
--- Обработка создания трассы
+-- Обновление данных о трассе и создание blips
 RegisterNetEvent("updateClientRaceData")
 AddEventHandler("updateClientRaceData", function(start, clips, finish, name)
     removeBlips() -- Удаляем старые blips
