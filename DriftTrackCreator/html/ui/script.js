@@ -27,12 +27,14 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         const name = document.getElementById('name').value;
         const type = document.getElementById('type').value;
-        fetch(`https://${GetParentResourceName()}/submit`, {
+
+        // Отправляем данные на сервер
+        fetch(`https://drift_race_creator/submit`, { // ИСПОЛЬЗУЕМ КОНКРЕТНОЕ ИМЯ РЕСУРСА
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ type: 'create_race', name, type })
         }).then(() => {
-            modal.classList.add('hidden');
+            modal.classList.add('hidden'); // Закрываем модальное окно после отправки
         });
     });
 });
